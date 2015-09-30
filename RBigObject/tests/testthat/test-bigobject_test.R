@@ -1,0 +1,105 @@
+context("Claire test")
+
+ip <- get_ip()
+port <- get_port()
+
+test_that("DBI Driver for BigObject", {
+  drv <- dbDriver("BigObject")
+  dbGetInfo(drv)
+  summary(drv)
+  dbUnloadDriver(drv)
+})
+
+test_that("DBI Connection", {
+  drv <- dbDriver("BigObject")
+  con <- dbConnect(drv, ip, port)
+  # con1 <- dbConnect(con)
+  dbDisconnect(con)
+  stopifnot(ls(con@results) %>% length == 0)
+})
+
+test_that("BigObjectResult", {
+  drv <- dbDriver("BigObject")
+  con <- dbConnect(drv, ip, port)
+  rs <- dbSendQuery(con, "SELECT * FROM sales")
+  expect_equal(rs$index, 0L)
+  df <- fetch(rs, 10)
+  expect_false(dbHasCompleted(rs))
+  expect_equal(nrow(df), 10L)
+  expect_equal(rs$index, 10L)
+  print(df)
+  dbClearResult(rs)
+  expect_equal(ls(con@results) %>% length, 0L)
+  expect_false(rs@handle %in% dbListResults(con))
+  rs <- dbSendQuery(con, "SELECT * FROM sales LIMIT 20")
+  expect_equal(rs$index, 0L)
+  df <- fetch(rs, 10)
+  expect_false(dbHasCompleted(rs))
+  df1 <- fetch(rs, 10)
+  expect_true(dbHasCompleted(rs))
+  dbDisconnect(con)
+  stopifnot(ls(con@results) %>% length == 0)
+})
+
+test_that("dbSendQuery with error", {
+  drv <- dbDriver("BigObject")
+  con <- dbConnect(drv, ip, port)
+  rs <- dbSendQuery(con, "SELECT * FROM saless")
+  expect_is(rs, "BigObjectErrorResult")
+  expect_match(rs@err, "doesn't exist: table")
+  expect_true(dbClearResult(rs))
+  dbDisconnect(con)
+})
+
+test_that("dbGetQuery", {
+  drv <- dbDriver("BigObject")
+  con <- dbConnect(drv, ip, port)
+  df <- dbGetQuery(con, "SELECT * FROM sales")
+  df2 <- dbReadTable(con, "sales")
+  expect_equal(df, df2)
+  expect_equal(nrow(df), 100000)
+  dbDisconnect(con)
+})
+
+test_that("dbGetInfo", {
+  drv <- dbDriver("BigObject")
+  con <- dbConnect(drv, ip, port)
+  expect_match(capture.output(dbGetInfo(con)), ip)
+  expect_match(capture.output(dbGetInfo(con)), port)
+  expect_match(capture.output(summary(con)) %>% paste(collapse = "\n"), "BigObject")
+  dbDisconnect(con)
+})
+
+test_that("dbListTables", {
+  drv <- dbDriver("BigObject")
+  con <- dbConnect(drv, ip, port)
+  dbListTables(con)
+  dbDisconnect(con)
+})
+
+test_that("dbWriteTable", {
+  drv <- dbDriver("BigObject")
+  con <- dbConnect(drv, ip, port)
+  if (dbExistsTable(con, "iristest2")) dbRemoveTable(con, "iristest2")
+  expect_true(dbWriteTable(con, "iristest2", iris))
+  suppressWarnings(expect_false(dbWriteTable(con, "iristest2", iris)))
+  expect_equal(dbReadTable(con, "iristest2") %>% nrow, 150)
+  expect_true(dbWriteTable(con, "iristest2", iris, append = TRUE))
+  expect_equal(dbReadTable(con, "iristest2") %>% nrow, 300)
+  expect_true(dbWriteTable(con, "iristest2", iris, overwrite = TRUE))
+  expect_equal(dbReadTable(con, "iristest2") %>% nrow, 150)
+  expect_error(dbWriteTable(con, "iristest2", iris, overwrite = TRUE, append = TRUE), "overwrite and append")
+  expect_true(dbExistsTable(con, "iristest2"))
+  expect_true(dbRemoveTable(con, "iristest2"))
+  dbDisconnect(con)
+})
+
+
+test_that("dbListFields", {
+  drv <- dbDriver("BigObject")
+  con <- dbConnect(drv, ip, port)
+  print(dbListFields(con, "sales"))
+  print(dbListFields(con, "Customer"))
+  print(dbListFields(con, "Product"))
+  dbDisconnect(con)
+})
